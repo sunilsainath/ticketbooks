@@ -19,3 +19,7 @@ prisma/migrations/dev.db*
 # misc
 *.log
 .DS_Store
+
+# local artifacts
+*.tsbuildinfo
+.sla-test-key.txt
