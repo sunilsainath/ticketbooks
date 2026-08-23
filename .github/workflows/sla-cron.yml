@@ -2,8 +2,8 @@ name: SLA + email cron
 # Runs the SLA breach scanner and email retry worker on a schedule.
 # Useful on Vercel's Hobby plan, where scheduled crons are limited to daily.
 #
-# Setup (repo Settings -> Secrets and variables -> Actions):
-#   APP_URL      e.g. https://your-app.vercel.app
+# Setup (repo Settings -> Secrets and variables -> Actions -> Repository secrets):
+#   APP_URL      e.g. https://ticketbooks-loxs.vercel.app
 #   CRON_SECRET  the same value as the CRON_SECRET env var in Vercel
 
 on:
@@ -15,8 +15,25 @@ jobs:
   tick:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate secrets
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::error::Repository secret APP_URL is missing. Add it under Settings -> Secrets and variables -> Actions (e.g. https://your-app.vercel.app)"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Repository secret CRON_SECRET is missing. Add it under Settings -> Secrets and variables -> Actions (must match the CRON_SECRET env var in Vercel)"
+            exit 1
+          fi
+
       - name: Call background-job endpoint
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           curl -fsS -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/cron"
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron"
