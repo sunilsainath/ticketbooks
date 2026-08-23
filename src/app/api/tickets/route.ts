@@ -7,6 +7,7 @@ import { ticketScopeFor, can } from "@/lib/rbac";
 import { createTicket } from "@/lib/tickets/service";
 import { serializeTicket } from "@/lib/tickets/serialize";
 import { getSlaPolicy } from "@/lib/sla";
+import { maybeRunBackgroundScan } from "@/lib/background";
 
 const listSchema = z.object({
   q: z.string().optional(),
@@ -28,6 +29,7 @@ const listSchema = z.object({
 });
 
 export const GET = authRoute(async (req, user) => {
+  maybeRunBackgroundScan();
   const url = new URL(req.url);
   const p = Object.fromEntries(url.searchParams.entries());
   const params = listSchema.parse(p);
