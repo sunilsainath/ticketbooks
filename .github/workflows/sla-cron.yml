@@ -1,0 +1,22 @@
+name: SLA + email cron
+# Runs the SLA breach scanner and email retry worker on a schedule.
+# Useful on Vercel's Hobby plan, where scheduled crons are limited to daily.
+#
+# Setup (repo Settings -> Secrets and variables -> Actions):
+#   APP_URL      e.g. https://your-app.vercel.app
+#   CRON_SECRET  the same value as the CRON_SECRET env var in Vercel
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call background-job endpoint
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron"

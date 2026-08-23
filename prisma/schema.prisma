@@ -1,0 +1,430 @@
+// Strike - Work Management Platform
+// PostgreSQL schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Migrations must bypass PgBouncer-style poolers -> point DIRECT_URL at the
+  // session/direct connection. Locally it is simply the same database.
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & Access
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions Json     @default("[]")
+  isSystem    Boolean  @default(false)
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Team {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  managerId   String?
+  manager     User?     @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
+  members     User[]    @relation("TeamMembers")
+  projects    Project[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model User {
+  id              String    @id @default(cuid())
+  firstName       String
+  lastName        String
+  email           String    @unique
+  passwordHash    String
+  jobTitle        String?
+  phone           String?
+  timeZone        String?
+  avatarUrl       String?
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  teamId          String?
+  team            Team?     @relation("TeamMembers", fields: [teamId], references: [id])
+  managedTeams    Team[]    @relation("TeamManager")
+  status          String    @default("ACTIVE")
+  lastLoginAt     DateTime?
+  emailVerifiedAt DateTime?
+  prefs           Json      @default("{}")
+
+  sessions         Session[]
+  passwordResets   PasswordResetToken[]
+  reportedTickets  Ticket[]             @relation("Reporter")
+  assignedTickets  Ticket[]             @relation("Assignee")
+  comments         Comment[]
+  attachments      Attachment[]
+  historyEntries   TicketHistory[]
+  notifications    Notification[]       @relation("Recipient")
+  actedNotifications Notification[]     @relation("Actor")
+  watching         TicketWatcher[]
+  auditLogs        AuditLog[]
+  savedFilters     SavedFilter[]
+  emailEvents      EmailEvent[]         @relation("EmailUploader")
+  projectMembers   ProjectMember[]
+  ledProjects      Project[]            @relation("ProjectLead")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([teamId])
+  @@index([roleId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Projects & configuration
+// ---------------------------------------------------------------------------
+
+model Project {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  leadId      String?
+  lead        User?    @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  nextNumber  Int      @default(1000)
+  archived    Boolean  @default(false)
+  members     ProjectMember[]
+  tickets     Ticket[]
+  sprints     Sprint[]
+  labels      Label[]
+  automations AutomationRule[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([teamId])
+}
+
+model ProjectMember {
+  projectId String
+  userId    String
+  role      String  @default("MEMBER")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+}
+
+model Status {
+  id        String   @id @default(cuid())
+  name      String
+  category  String // TODO | IN_PROGRESS | DONE
+  color     String   @default("#64748b")
+  order     Int      @default(0)
+  isDefault Boolean  @default(false)
+  isSystem  Boolean  @default(false)
+  tickets   Ticket[]
+}
+
+model Priority {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int      @default(0)
+  color     String   @default("#64748b")
+  isDefault Boolean  @default(false)
+  isSystem  Boolean  @default(false)
+  tickets   Ticket[]
+}
+
+model TicketType {
+  id        String   @id @default(cuid())
+  name      String
+  icon      String   @default("circle")
+  isSubtask Boolean  @default(false)
+  isSystem  Boolean  @default(false)
+  order     Int      @default(0)
+  tickets   Ticket[]
+}
+
+model Sprint {
+  id        String   @id @default(cuid())
+  name      String
+  state     String   @default("PLANNED") // PLANNED | ACTIVE | COMPLETED
+  goal      String?
+  startDate DateTime?
+  endDate   DateTime?
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tickets   Ticket[]
+  createdAt DateTime @default(now())
+}
+
+model Label {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#6366f1")
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tickets   TicketLabel[]
+}
+
+model TicketLabel {
+  ticketId String
+  labelId  String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  label    Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, labelId])
+}
+
+// ---------------------------------------------------------------------------
+// Tickets
+// ---------------------------------------------------------------------------
+
+model Ticket {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  number          Int
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  typeId          String
+  type            TicketType @relation(fields: [typeId], references: [id])
+  statusId        String
+  status          Status    @relation(fields: [statusId], references: [id])
+  priorityId      String
+  priority        Priority  @relation(fields: [priorityId], references: [id])
+  title           String
+  description     String    @default("")
+  reporterId      String?
+  reporter        User?     @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  assigneeId      String?
+  assignee        User?     @relation("Assignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  sprintId        String?
+  sprint          Sprint?   @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  parentId        String?
+  parent          Ticket?   @relation("TicketTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children        Ticket[]  @relation("TicketTree")
+  storyPoints     Int?
+  estimateMinutes Int?
+  startDate       DateTime?
+  dueDate         DateTime?
+  firstResponseDueAt DateTime?
+  resolveDueAt       DateTime?
+  reopenedCount   Int       @default(0)
+  slaFlaggedAt    DateTime?
+  labels          TicketLabel[]
+  comments        Comment[]
+  attachments     Attachment[]
+  history         TicketHistory[]
+  watchers        TicketWatcher[]
+  notifications   Notification[]
+  emailEvents     EmailEvent[]
+  customValues    CustomFieldValue[]
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([projectId, statusId])
+  @@index([assigneeId])
+  @@index([reporterId])
+  @@index([dueDate])
+  @@index([title])
+}
+
+model TicketWatcher {
+  ticketId String
+  userId   String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, userId])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  ticketId  String
+  ticket    Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id])
+  parentId  String?
+  body      String
+  editedAt  DateTime?
+  deletedAt DateTime?
+  attachments Attachment[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([ticketId])
+}
+
+model Attachment {
+  id         String    @id @default(cuid())
+  fileName   String
+  mimeType   String
+  size       Int
+  storagePath String
+  uploaderId String
+  uploader   User      @relation(fields: [uploaderId], references: [id])
+  ticketId   String?
+  ticket     Ticket?   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  commentId  String?
+  comment    Comment?  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@index([ticketId])
+}
+
+model TicketHistory {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  field     String
+  oldValue  String?
+  newValue  String?
+  message   String?
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications / Email / Audit / Misc
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation("Recipient", fields: [userId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?     @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+  type      String
+  title     String
+  body      String?
+  ticketId  String?
+  ticket    Ticket?   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+model EmailEvent {
+  id           String    @id @default(cuid())
+  ticketId     String?
+  ticket       Ticket?   @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  direction    String    @default("OUTBOUND") // OUTBOUND | INBOUND
+  sender       String?
+  recipients   String?
+  subject      String
+  body         String?
+  templateKey  String?
+  status       String    @default("PENDING") // PENDING | SENT | FAILED | RECEIVED
+  provider     String?
+  messageId    String?
+  error        String?
+  attempts     Int       @default(0)
+  uploadedById String?
+  uploader     User?     @relation("EmailUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  sentAt       DateTime?
+  nextRetryAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([ticketId])
+  @@index([status, nextRetryAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model SavedFilter {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  query     Json
+  shared    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AutomationRule {
+  id         String   @id @default(cuid())
+  name       String
+  enabled    Boolean  @default(true)
+  trigger    String // FIELD_CHANGED | DUE_SOON | OVERDUE
+  config     Json
+  actions    Json
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+model CustomFieldDef {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  type      String // TEXT | NUMBER | DROPDOWN | MULTISELECT | DATE | CHECKBOX | USER | URL
+  options   Json?
+  required  Boolean  @default(false)
+  projects  Json?    @default("[]")
+  types     Json?    @default("[]")
+  values    CustomFieldValue[]
+  createdAt DateTime @default(now())
+}
+
+model CustomFieldValue {
+  id        String         @id @default(cuid())
+  fieldId   String
+  field     CustomFieldDef @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  ticketId  String
+  ticket    Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  value     String?
+
+  @@unique([fieldId, ticketId])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
