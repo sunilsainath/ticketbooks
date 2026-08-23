@@ -1,0 +1,21 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+standalone/
+
+# env & secrets
+.env
+.env*.local
+
+# uploads
+uploads/
+
+# prisma
+prisma/migrations/dev.db*
+
+# misc
+*.log
+.DS_Store
