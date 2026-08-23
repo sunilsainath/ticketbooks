@@ -26,8 +26,12 @@ class SmtpProvider implements MailProvider {
     this.cfg = cfg;
   }
   async send(msg: MailMessage) {
-    // nodemailer is a Node-only package - loaded at runtime so bundlers never inline it
-    const nodemailer = await import(/* webpackIgnore: true */ "nodemailer" as string);
+    // nodemailer is Node-only: the runtime gate lets Edge builds tree-shake this
+    // branch entirely, while Node builds bundle + trace nodemailer normally.
+    if (process.env.NEXT_RUNTIME !== "nodejs") {
+      throw new Error("SMTP email requires the Node.js runtime");
+    }
+    const nodemailer = await import("nodemailer");
     const transport = nodemailer.createTransport({
       host: this.cfg.host,
       port: this.cfg.port,
