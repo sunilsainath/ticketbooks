@@ -1,10 +1,12 @@
 import { db } from "@/lib/db";
 import { authRoute, ok } from "@/lib/api";
 import { ticketScopeFor, can, isSuperAdmin } from "@/lib/rbac";
+import { maybeRunBackgroundScan } from "@/lib/background";
 
 const DAY = 86400000;
 
 export const GET = authRoute(async (_req, user) => {
+  maybeRunBackgroundScan();
   const scope = ticketScopeFor(user);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
