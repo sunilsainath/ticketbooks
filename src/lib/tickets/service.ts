@@ -22,12 +22,26 @@ const ticketInclude = {
 } satisfies Prisma.TicketInclude;
 export type TicketWithRefs = Prisma.TicketGetPayload<{ include: typeof ticketInclude }>;
 
-export async function getTicketOr404(key: string): Promise<TicketWithRefs> {
-  const t = await db.ticket.findFirst({
-    where: { key: key.toUpperCase(), deletedAt: null },
+export async function getTicketOr404(keyOrId: string): Promise<TicketWithRefs> {
+  const normalized = keyOrId.toUpperCase();
+  let t = await db.ticket.findFirst({
+    where: { key: normalized, deletedAt: null },
     include: ticketInclude,
   });
+  if (!t) {
+    t = await db.ticket.findFirst({
+      where: { id: keyOrId, deletedAt: null },
+      include: ticketInclude,
+    });
+  }
   if (!t) throw notFound("Ticket not found");
+  return t;
+}
+
+async function findTicketByKeyOrId(keyOrId: string) {
+  const normalized = keyOrId.toUpperCase();
+  let t = await db.ticket.findFirst({ where: { key: normalized, deletedAt: null } });
+  if (!t) t = await db.ticket.findFirst({ where: { id: keyOrId, deletedAt: null } });
   return t;
 }
 
@@ -407,7 +421,7 @@ export async function claimTicket(actor: SessionUser, key: string) {
   if (!can(actor, "ticket.claim") && !can(actor, "*")) throw forbidden("You cannot claim tickets");
   if (actor.status === "DISABLED") throw forbidden("Disabled users cannot claim tickets");
 
-  const ticket = await db.ticket.findFirst({ where: { key: key.toUpperCase(), deletedAt: null } });
+  const ticket = await findTicketByKeyOrId(key);
   if (!ticket) throw notFound("Ticket not found");
 
   const result = await db.$transaction(async (tx) => {

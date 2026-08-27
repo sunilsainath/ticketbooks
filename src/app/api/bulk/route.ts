@@ -15,7 +15,8 @@ export const PATCH = authRoute(async (req, actor) => {
 
   for (const key of data.keys) {
     try {
-      const ticket = await db.ticket.findFirst({ where: { key: key.toUpperCase(), deletedAt: null } });
+      let ticket = await db.ticket.findFirst({ where: { key: key.toUpperCase(), deletedAt: null } });
+      if (!ticket) ticket = await db.ticket.findFirst({ where: { id: key, deletedAt: null } });
       if (!ticket) throw new Error("Ticket not found");
 
       if (data.action === "delete") {

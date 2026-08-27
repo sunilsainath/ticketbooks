@@ -70,7 +70,7 @@ function BoardInner() {
   );
 
   const onDragStart = (e: DragStartEvent) => {
-    setDragging(cards?.find((c) => c.id === e.active.id) ?? null);
+    setDragging(cards?.find((c) => c.key === e.active.id) ?? null);
   };
 
   const onDragEnd = async (e: DragEndEvent) => {
@@ -79,12 +79,12 @@ function BoardInner() {
     const activeId = e.active.id as string;
     if (!overId || !cards) return;
 
-    const card = cards.find((c) => c.id === activeId);
+    const card = cards.find((c) => c.key === activeId);
     const targetStatus = statuses?.find((s) => s.id === overId);
     if (!card || !targetStatus || card.status.id === targetStatus.id) return;
 
     const prev = cards;
-    setCards(cards.map((c) => (c.id === activeId ? { ...c, status: { id: targetStatus.id, name: targetStatus.name } } : c)));
+    setCards(cards.map((c) => (c.key === activeId ? { ...c, status: { id: targetStatus.id, name: targetStatus.name } } : c)));
     try {
       await api("/api/tickets/" + activeId, { method: "PATCH", json: { statusId: targetStatus.id } });
       window.dispatchEvent(new CustomEvent("strike:tickets-updated"));
@@ -162,7 +162,7 @@ function Column({ status, cards }: { status: Status; cards: Card[] }) {
 }
 
 function TicketCard({ card }: { card: Card }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: card.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: card.key });
   const dl = dueLabel(card.dueDate);
   return (
     <div
