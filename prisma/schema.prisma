@@ -105,6 +105,20 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 }
 
+model OtpToken {
+  id         String    @id @default(cuid())
+  email      String
+  otpHash    String
+  purpose    String    @default("email_verification") // email_verification | password_reset
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, purpose])
+  @@index([expiresAt])
+}
+
 // ---------------------------------------------------------------------------
 // Projects & configuration
 // ---------------------------------------------------------------------------

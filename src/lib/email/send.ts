@@ -73,7 +73,12 @@ export async function attemptSend(emailEventId: string): Promise<boolean> {
 /** Retry loop for failed/pending emails; safe to call concurrently */
 export async function retryPendingEmails(): Promise<number> {
   const due = await db.emailEvent.findMany({
-    where: { status: "PENDING", direction: "OUTBOUND", nextRetryAt: { lte: new Date() }, attempts: { lt: 5 } },
+    where: {
+      status: "PENDING",
+      direction: "OUTBOUND",
+      attempts: { lt: 5 },
+      OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
+    },
     take: 20,
   });
   let sent = 0;

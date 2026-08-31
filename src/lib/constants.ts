@@ -54,5 +54,8 @@ export const EMAIL_TEMPLATES = [
   "ticket_reopened",
   "ticket_overdue",
   "user_invitation",
+  "otp_verification",
+  "email_verification",
+  "password_reset_otp",
 ] as const;
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATES)[number];

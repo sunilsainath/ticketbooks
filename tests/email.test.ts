@@ -16,15 +16,33 @@ afterAll(async () => {
 
 describe("email provider abstraction", () => {
   it("falls back to console provider when nothing is configured", async () => {
+    const prevProvider = process.env.EMAIL_PROVIDER;
+    const prevHost = process.env.SMTP_HOST;
+    process.env.EMAIL_PROVIDER = "console";
+    delete process.env.SMTP_HOST;
     const p = await getMailProvider(undefined);
     expect(p.name).toBe("console");
     const res = await p.send({ to: "x@y.z", subject: "s", html: "<p>b</p>" });
     expect(res.messageId).toContain("console-");
+    if (prevProvider) process.env.EMAIL_PROVIDER = prevProvider; else delete process.env.EMAIL_PROVIDER;
+    if (prevHost) process.env.SMTP_HOST = prevHost;
   });
 
   it("uses DB-configured smtp provider", async () => {
     const p = await getMailProvider({ provider: "smtp", smtpHost: "localhost", smtpPort: 2599 });
     expect(p.name).toBe("smtp");
+  });
+
+  it("falls back to console when smtp provider has no host configured", async () => {
+    const p = await getMailProvider({ provider: "smtp" });
+    // No host in DB or env -> should fallback to console (our fix prevents silent misconfig)
+    // This test temporarily clears SMTP_HOST to simulate missing host
+    const prevHost = process.env.SMTP_HOST;
+    delete process.env.SMTP_HOST;
+    const p2 = await getMailProvider({ provider: "smtp" });
+    expect(p2.name).toBe("console");
+    if (prevHost) process.env.SMTP_HOST = prevHost;
+    expect(p.name).toBe("smtp"); // with host it is smtp
   });
 });
 

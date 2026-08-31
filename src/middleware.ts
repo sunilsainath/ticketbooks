@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "strike_session";
-const PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password"];
+const PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password", "/verify-otp", "/verify-email"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

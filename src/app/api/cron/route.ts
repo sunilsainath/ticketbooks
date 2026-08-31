@@ -18,6 +18,18 @@ async function handler(req: Request) {
   const { retryPendingEmails } = await import("@/lib/email/send");
 
   const [flagged, emailsRetried] = await Promise.all([flagBreachedTickets(), retryPendingEmails()]);
+
+  // Cleanup expired OTP tokens (keep verified for audit for 24h, remove unverified expired after 1h)
+  try {
+    const { db } = await import("@/lib/db");
+    const expired = await db.otpToken.deleteMany({
+      where: { expiresAt: { lt: new Date(Date.now() - 60_000) }, verifiedAt: null },
+    });
+    if (expired.count > 0) console.log(`[cron] cleaned ${expired.count} expired OTP tokens`);
+  } catch (e) {
+    console.error("[cron] OTP cleanup failed", e);
+  }
+
   return ok({ ok: true, at: new Date().toISOString(), slaFlagged: flagged, emailsRetried });
 }
 

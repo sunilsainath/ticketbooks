@@ -71,6 +71,29 @@ const DEFAULT_TEMPLATES: Record<EmailTemplateKey, { subject: string; body: strin
     body: `<p>Hi {{first_name}},</p><p>An account has been created for you on TicketBooks.</p>
 <p>Sign in at <a href="{{login_url}}">{{login_url}}</a> with your work email.</p>`,
   },
+  otp_verification: {
+    subject: "Your TicketBooks verification code is {{otp_code}}",
+    body: `<p>Hi {{first_name}},</p>
+<p>Your verification code is:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px;text-align:center;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:16px;margin:16px 0">{{otp_code}}</p>
+<p>This code expires in <b>{{expires_minutes}} minutes</b>. Do not share it with anyone.</p>
+<p style="color:#64748b;font-size:12px">If you didn't request this, you can safely ignore this email.</p>`,
+  },
+  email_verification: {
+    subject: "Verify your email - {{otp_code}}",
+    body: `<p>Hi {{first_name}},</p>
+<p>Use this code to verify your email address:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px;text-align:center;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:16px;margin:16px 0">{{otp_code}}</p>
+<p>Expires in {{expires_minutes}} minutes.</p>`,
+  },
+  password_reset_otp: {
+    subject: "Reset your password - code {{otp_code}}",
+    body: `<p>Hi {{first_name}},</p>
+<p>You requested to reset your password. Use this OTP to proceed:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px;text-align:center;background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:8px;padding:16px;margin:16px 0">{{otp_code}}</p>
+<p>This code expires in <b>{{expires_minutes}} minutes</b>.</p>
+<p style="color:#64748b;font-size:12px">If you didn't request a reset, ignore this email.</p>`,
+  },
 };
 
 function fillVars(template: string, vars: Vars): string {

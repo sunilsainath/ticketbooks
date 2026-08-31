@@ -42,14 +42,17 @@ export default function ForgotPasswordPage() {
               If an account exists for <b>{email}</b>, we have sent a password reset link. The link expires in one hour.
             </p>
             <p className="mt-3 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-              With the default &quot;console&quot; email provider, the reset link is printed to the server log.
+              Didn&apos;t get it? Check spam folder or try <Link href={`/verify-otp?email=${encodeURIComponent(email)}&purpose=password_reset`} className="font-medium text-primary hover:underline">verification code (OTP)</Link> instead.
             </p>
-            <Link href="/login" className="mt-6 inline-block text-sm font-medium text-primary hover:underline">Back to sign in</Link>
+            <div className="mt-6 flex gap-4">
+              <Link href="/login" className="text-sm font-medium text-primary hover:underline">Back to sign in</Link>
+              <Link href={`/verify-otp?email=${encodeURIComponent(email)}&purpose=password_reset`} className="text-sm font-medium text-primary hover:underline">Use OTP instead</Link>
+            </div>
           </>
         ) : (
           <>
             <h1 className="text-xl font-bold tracking-tight">Forgot your password?</h1>
-            <p className="mt-1.5 text-sm text-muted-foreground">We will email you a secure reset link.</p>
+            <p className="mt-1.5 text-sm text-muted-foreground">We will email you a secure reset link or one-time code.</p>
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div>
                 <Label htmlFor="email" required>Work email</Label>
@@ -58,6 +61,9 @@ export default function ForgotPasswordPage() {
               {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
               <Button type="submit" size="lg" loading={loading} className="w-full justify-center">Send reset link</Button>
             </form>
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              Prefer a code? <Link href="/verify-otp" className="font-medium text-primary hover:underline">Verify with OTP</Link>
+            </div>
             <Link href="/login" className="mt-6 inline-block text-sm font-medium text-primary hover:underline">Back to sign in</Link>
           </>
         )}
