@@ -96,8 +96,24 @@ const DEFAULT_TEMPLATES: Record<EmailTemplateKey, { subject: string; body: strin
   },
 };
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function fillVars(template: string, vars: Vars): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? "");
+}
+
+function fillVarsEscaped(template: string, vars: Vars): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+    const v = vars[key];
+    return v != null ? escapeHtml(v) : "";
+  });
 }
 
 function pageWrap(title: string, inner: string): string {
@@ -123,7 +139,7 @@ export async function renderEmail(
     ...vars,
   };
   return {
-    subject: fillVars(tpl.subject, varsWithDefaults),
-    html: pageWrap(key.replaceAll("_", " "), fillVars(`<p>${tpl.body}</p>`, varsWithDefaults)),
+    subject: fillVars(tpl.subject, varsWithDefaults), // subject is plain text, no html escape needed
+    html: pageWrap(key.replaceAll("_", " "), fillVarsEscaped(`<p>${tpl.body}</p>`, varsWithDefaults)),
   };
 }
