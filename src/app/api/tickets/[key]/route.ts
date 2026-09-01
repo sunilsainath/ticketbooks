@@ -73,6 +73,7 @@ export const GET = authRoute(async (_req, user, ctx: Ctx) => {
     emails,
     permissions: {
       canEdit: canEdit(user, t.assigneeId, t.reporterId),
+      canChangeStatus: canChangeStatus(user as any, t.assigneeId, t.reporterId, t.project.teamId),
       canAssign: canAssignCheck(user),
       canClaim: Boolean(t.assigneeId === null) && (user.permissions.includes("ticket.claim") || user.permissions.includes("*")),
       canDelete: user.permissions.includes("*") || user.permissions.includes("ticket.delete.team"),
@@ -88,6 +89,12 @@ function canEdit(user: { permissions: string[]; id: string; managedTeamIds?: str
   if (user.permissions.includes("*")) return true;
   if (user.permissions.includes("ticket.edit.team")) return true;
   if (user.permissions.includes("ticket.edit.assigned")) return user.id === assigneeId || user.id === reporterId;
+  return false;
+}
+function canChangeStatus(user: { permissions: string[]; id: string; teamId?: string | null }, assigneeId: string | null, reporterId: string | null, projectTeamId?: string | null): boolean {
+  if (canEdit(user as any, assigneeId, reporterId)) return true;
+  // Team members with edit.assigned can change status of any ticket in their team's project (board drag)
+  if (user.permissions.includes("ticket.edit.assigned") && projectTeamId && user.teamId && user.teamId === projectTeamId) return true;
   return false;
 }
 function canAssignCheck(user: { permissions: string[] }): boolean {

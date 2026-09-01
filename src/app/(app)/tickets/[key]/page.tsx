@@ -48,7 +48,7 @@ type Meta = {
 type Payload = {
   ticket: TicketDetail;
   comments: unknown[]; history: unknown[]; attachments: AttachmentRow[]; emails: EmailRow[];
-  permissions: { canEdit: boolean; canAssign: boolean; canClaim: boolean; canDelete: boolean };
+  permissions: { canEdit: boolean; canChangeStatus?: boolean; canAssign: boolean; canClaim: boolean; canDelete: boolean };
 };
 export type AttachmentRow = { id: string; fileName: string; mimeType: string; size: number; uploader: { firstName: string; lastName: string }; createdAt: string };
 export type EmailRow = { id: string; direction: string; sender: string | null; recipients: string | null; subject: string; body: string | null; status: string; createdAt: string };
@@ -221,7 +221,7 @@ export default function TicketPage() {
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              {meta && p.canEdit ? (
+              {meta && (p.canChangeStatus ?? p.canEdit) ? (
                 <Dropdown trigger={<StatusBadge name={t.status.name} color={t.status.color} />}>
                   {(close) => meta.statuses.map((s) => (
                     <DropdownItem key={s.id} onClick={() => { close(); void patch({ statusId: s.id }, "Status changed"); }}>
