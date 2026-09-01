@@ -288,49 +288,78 @@ export async function updateTicket(actor: SessionUser, key: string, patch: Updat
     changes.push({ spec, oldVal: current, newVal: v });
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    let t = before;
-    if (Object.keys(data).length) {
-      t = await tx.ticket.update({ where: { id: before.id }, data, include: ticketInclude }) as unknown as typeof before;
-    }
-    // Priority changed -> re-derive the SLA target (only when no manual due date governs)
-    const priorityChange = changes.find((c) => c.spec.label === "priority");
-    if (priorityChange && !before.dueDate) {
-      const { getSlaPolicy, targetHoursFor } = await import("@/lib/sla");
-      const slaPolicy = await getSlaPolicy();
-      const newHours = targetHoursFor(slaPolicy, String(priorityChange.newVal));
-      if (slaPolicy.enabled && newHours != null) {
-        const newTarget = new Date(Date.now() + newHours * 3600000);
-        await tx.ticket.update({ where: { id: before.id }, data: { resolveDueAt: newTarget } });
-        await recordHistory(tx, {
-          ticketId: before.id,
-          userId: actor.id,
-          field: "sla",
-          oldValue: null,
-          newValue: `target ${newHours}h`,
-          message: "SLA target re-applied after priority change",
-        });
-        t = { ...t, resolveDueAt: newTarget } as unknown as typeof before;
+  // Validate FKs early to return 400 instead of 500 (P2003)
+  if (data.statusId) {
+    const s = await db.status.findUnique({ where: { id: String(data.statusId) } });
+    if (!s) throw badRequest("Invalid status");
+  }
+  if (data.priorityId) {
+    const p = await db.priority.findUnique({ where: { id: String(data.priorityId) } });
+    if (!p) throw badRequest("Invalid priority");
+  }
+  if (data.typeId) {
+    const t = await db.ticketType.findUnique({ where: { id: String(data.typeId) } });
+    if (!t) throw badRequest("Invalid ticket type");
+  }
+  if (data.sprintId) {
+    const s = await db.sprint.findUnique({ where: { id: String(data.sprintId) } });
+    if (!s) throw badRequest("Invalid sprint");
+  }
+  if (data.assigneeId) {
+    const u = await db.user.findUnique({ where: { id: String(data.assigneeId) } });
+    if (!u) throw badRequest("Assignee not found");
+    if (u.status === "DISABLED") throw badRequest("Cannot assign to a disabled user");
+  }
+
+  // Use non-interactive sequential updates to stay compatible with PgBouncer transaction pooling
+  // (Supabase pooler at 6543). Interactive $transaction(async tx=>) fails with "Response from the Engine was empty".
+  let updated: TicketWithRefs = before;
+  if (Object.keys(data).length) {
+    try {
+      updated = (await db.ticket.update({ where: { id: before.id }, data, include: ticketInclude })) as unknown as typeof before;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") {
+        throw badRequest("Invalid reference (foreign key violation)");
       }
+      throw e;
     }
-    for (const c of changes) {
-      const [oldName, newName] = await Promise.all([
-        c.spec.render ? c.spec.render(c.oldVal) : Promise.resolve(String(c.oldVal ?? "")),
-        c.spec.render ? c.spec.render(c.newVal) : Promise.resolve(String(c.newVal ?? "")),
-      ]);
-      await recordHistory(tx, {
-        ticketId: before.id, userId: actor.id, field: c.spec.label,
-        oldValue: oldName, newValue: newName,
+  }
+  // Priority changed -> re-derive the SLA target (only when no manual due date governs)
+  const priorityChange = changes.find((c) => c.spec.label === "priority");
+  if (priorityChange && !before.dueDate) {
+    const { getSlaPolicy, targetHoursFor } = await import("@/lib/sla");
+    const slaPolicy = await getSlaPolicy();
+    const newHours = targetHoursFor(slaPolicy, String(priorityChange.newVal));
+    if (slaPolicy.enabled && newHours != null) {
+      const newTarget = new Date(Date.now() + newHours * 3600000);
+      await db.ticket.update({ where: { id: before.id }, data: { resolveDueAt: newTarget } });
+      await recordHistory(db, {
+        ticketId: before.id,
+        userId: actor.id,
+        field: "sla",
+        oldValue: null,
+        newValue: `target ${newHours}h`,
+        message: "SLA target re-applied after priority change",
       });
+      updated = { ...updated, resolveDueAt: newTarget } as unknown as typeof before;
     }
-    if (Array.isArray(labelIds)) {
-      await tx.ticketLabel.deleteMany({ where: { ticketId: before.id } });
-      if (labelIds.length) await tx.ticketLabel.createMany({ data: labelIds.map((id) => ({ ticketId: before.id, labelId: id })) });
-      const names = await tx.label.findMany({ where: { id: { in: labelIds } } });
-      await recordHistory(tx, { ticketId: before.id, userId: actor.id, field: "labels", oldValue: "", newValue: names.map((n) => n.name).join(", ") });
-    }
-    return t;
-  });
+  }
+  for (const c of changes) {
+    const [oldName, newName] = await Promise.all([
+      c.spec.render ? c.spec.render(c.oldVal) : Promise.resolve(String(c.oldVal ?? "")),
+      c.spec.render ? c.spec.render(c.newVal) : Promise.resolve(String(c.newVal ?? "")),
+    ]);
+    await recordHistory(db, {
+      ticketId: before.id, userId: actor.id, field: c.spec.label,
+      oldValue: oldName, newValue: newName,
+    });
+  }
+  if (Array.isArray(labelIds)) {
+    await db.ticketLabel.deleteMany({ where: { ticketId: before.id } });
+    if (labelIds.length) await db.ticketLabel.createMany({ data: labelIds.map((id) => ({ ticketId: before.id, labelId: id })) });
+    const names = await db.label.findMany({ where: { id: { in: labelIds } } });
+    await recordHistory(db, { ticketId: before.id, userId: actor.id, field: "labels", oldValue: "", newValue: names.map((n) => n.name).join(", ") });
+  }
 
   await afterUpdate(actor, before, updated, changes.map((c) => c.spec.label));
   return updated;
