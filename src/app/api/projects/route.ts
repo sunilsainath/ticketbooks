@@ -34,29 +34,52 @@ export const GET = authRoute(async (_req, user) => {
 
 const createSchema = z.object({
   name: z.string().min(2).max(80),
-  key: z.string().regex(/^[A-Z][A-Z0-9]{1,9}$/, "Key must be 2-10 uppercase letters/digits"),
+  key: z
+    .string()
+    .min(2)
+    .max(10)
+    .transform((v) => v.trim().toUpperCase())
+    .pipe(z.string().regex(/^[A-Z][A-Z0-9]{1,9}$/, "Key must be 2-10 letters/digits (A-Z, 0-9), starting with a letter")),
   description: z.string().max(1000).optional(),
   leadId: z.string().nullable().optional(),
   teamId: z.string().nullable().optional(),
 });
 
 export const POST = authRoute(async (req, actor) => {
-  if (!can(actor, "*") && !can(actor, "project.manage")) throw forbidden();
+  if (!can(actor, "*") && !can(actor, "project.manage")) throw forbidden("You do not have permission to create projects. Requires Admin or Project Manager role.");
   const data = await parseBody(req, createSchema);
+  // data.key is already uppercased via zod transform
   const existing = await db.project.findUnique({ where: { key: data.key } });
   if (existing) throw badRequest(`Project key ${data.key} is already in use`);
 
-  const project = await db.project.create({
-    data: {
-      name: data.name,
-      key: data.key.toUpperCase(),
-      description: data.description,
-      leadId: data.leadId || null,
-      teamId: data.teamId || null,
-      nextNumber: 1000,
-      members: actor.id ? { create: [{ userId: actor.id }] } : undefined,
-    },
-  });
+  // Validate FKs to give clear 400 instead of 500 on invalid IDs
+  if (data.leadId) {
+    const leadExists = await db.user.findUnique({ where: { id: data.leadId }, select: { id: true } });
+    if (!leadExists) throw badRequest("Lead user not found");
+  }
+  if (data.teamId) {
+    const teamExists = await db.team.findUnique({ where: { id: data.teamId }, select: { id: true } });
+    if (!teamExists) throw badRequest("Team not found");
+  }
+
+  let project;
+  try {
+    project = await db.project.create({
+      data: {
+        name: data.name.trim(),
+        key: data.key.toUpperCase(),
+        description: data.description?.trim(),
+        leadId: data.leadId || null,
+        teamId: data.teamId || null,
+        nextNumber: 1000,
+        members: actor.id ? { create: [{ userId: actor.id }] } : undefined,
+      },
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("Unique constraint") || msg.includes("unique")) throw badRequest(`Project key ${data.key} is already in use`);
+    throw e;
+  }
   await db.auditLog.create({ data: { userId: actor.id, action: "PROJECT_CREATED", entityType: "Project", entityId: project.id, metadata: { key: project.key } } });
   return ok(project, { status: 201 });
 });

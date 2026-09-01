@@ -51,7 +51,7 @@ async function main() {
       permissions: [
         "ticket.create", "ticket.edit.team", "ticket.assign", "ticket.claim", "ticket.delete.team",
         "ticket.comment", "ticket.watch", "subtask.create", "report.view.team", "user.view",
-        "team.view", "project.view", "dashboard.view", "notification.receive",
+        "team.view", "project.view", "project.manage", "dashboard.view", "notification.receive",
       ],
     },
   });
