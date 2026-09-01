@@ -79,14 +79,19 @@ function BoardInner() {
     const activeId = e.active.id as string;
     if (!overId || !cards) return;
 
-    const card = cards.find((c) => c.key === activeId);
-    const targetStatus = statuses?.find((s) => s.id === overId);
+    const card = cards.find((c) => c.key === activeId || c.id === activeId);
+    let targetStatus = statuses?.find((s) => s.id === overId);
+    // If dropped on another card (not column), resolve to that card's status column
+    if (!targetStatus) {
+      const overCard = cards.find((c) => c.key === overId || c.id === overId);
+      if (overCard) targetStatus = statuses?.find((s) => s.id === overCard.status.id);
+    }
     if (!card || !targetStatus || card.status.id === targetStatus.id) return;
 
     const prev = cards;
-    setCards(cards.map((c) => (c.key === activeId ? { ...c, status: { id: targetStatus.id, name: targetStatus.name } } : c)));
+    setCards(cards.map((c) => (c.key === activeId || c.id === activeId ? { ...c, status: { id: targetStatus.id, name: targetStatus.name } } : c)));
     try {
-      await api("/api/tickets/" + activeId, { method: "PATCH", json: { statusId: targetStatus.id } });
+      await api("/api/tickets/" + card.key, { method: "PATCH", json: { statusId: targetStatus.id } });
       window.dispatchEvent(new CustomEvent("strike:tickets-updated"));
       toast({ title: card.key + " moved to " + targetStatus.name });
     } catch (err) {

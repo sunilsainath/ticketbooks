@@ -258,7 +258,16 @@ export async function updateTicket(actor: SessionUser, key: string, patch: Updat
   const isAdmin = can(actor, "*");
   const canEditAny = can(actor, "ticket.edit.team");
   const involved = before.assigneeId === actor.id || before.reporterId === actor.id;
-  if (!isAdmin && !canEditAny && !(canEditAny === false && involved && can(actor, "ticket.edit.assigned"))) {
+  const isStatusOnlyChange =
+    Object.keys(patch).length === 1 && (patch as Record<string, unknown>).statusId !== undefined;
+  const sameTeam = Boolean(actor.teamId && before.project.teamId && actor.teamId === before.project.teamId);
+  // Allow: admin, or manager (edit.team), or involved employee (edit.assigned), or team-member moving status on board
+  const canEdit =
+    isAdmin ||
+    canEditAny ||
+    (involved && can(actor, "ticket.edit.assigned")) ||
+    (isStatusOnlyChange && sameTeam && can(actor, "ticket.edit.assigned"));
+  if (!canEdit) {
     throw forbidden();
   }
 
