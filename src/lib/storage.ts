@@ -18,16 +18,21 @@ export function storageMode(): StorageMode {
   return SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "local";
 }
 
+function localDir(): string {
+  // Vercel's filesystem is read-only except /tmp
+  if (process.env.VERCEL) return path.join("/tmp", "uploads");
+  return path.resolve(process.env.UPLOAD_DIR ?? "./uploads");
+}
+
 async function saveLocal(key: string, data: Buffer) {
-  const dir = path.resolve(process.env.UPLOAD_DIR ?? "./uploads");
+  const dir = localDir();
   await mkdir(dir, { recursive: true });
   // key is a generated uuid+ext produced by our own code - no user input in path
   await writeFile(path.join(dir, key), data);
 }
 
 async function readLocal(key: string): Promise<Buffer> {
-  const dir = path.resolve(process.env.UPLOAD_DIR ?? "./uploads");
-  return readFile(path.join(dir, path.basename(key)));
+  return readFile(path.join(localDir(), path.basename(key)));
 }
 
 async function supabaseFetch(key: string, method: "PUT" | "GET", body?: Buffer): Promise<Response> {
