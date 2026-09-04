@@ -24,6 +24,8 @@ type Card = {
   sla?: { status: "breached" | "at_risk" | "on_track" | "met" | "none"; hoursOverdue: number | null; hoursLeft: number | null };
 };
 type Status = { id: string; name: string; color: string; category: string; order: number };
+type Priority = { id: string; name: string; color: string; order: number };
+type BoardUser = { id: string; firstName: string; lastName: string; avatarUrl: string | null };
 
 export default function BoardPage() {
   return (
@@ -42,16 +44,22 @@ function BoardInner() {
   const [statuses, setStatuses] = useState<Status[] | null>(null);
   const [cards, setCards] = useState<Card[] | null>(null);
   const [dragging, setDragging] = useState<Card | null>(null);
+  const [priorities, setPriorities] = useState<Priority[]>([]);
+  const [users, setUsers] = useState<BoardUser[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
   const [viewMode, setViewMode] = useState<"board" | "list">(() => {
     if (typeof window !== "undefined") return (localStorage.getItem("board-view") as "board" | "list") || "board";
     return "board";
   });
 
   useEffect(() => {
-    api<{ statuses: Status[]; projects: { id: string; key: string; name: string }[] }>("/api/meta").then((m) => {
+    api<{ statuses: Status[]; projects: { id: string; key: string; name: string }[]; priorities: Priority[]; users: BoardUser[] }>("/api/meta").then((m) => {
       setStatuses([...m.statuses].sort((a, b) => a.order - b.order));
       setProjects(m.projects);
       setProjectId((cur) => cur || m.projects[0]?.id || "");
+      setPriorities([...m.priorities].sort((a, b) => b.order - a.order));
+      setUsers(m.users);
     }).catch(() => {});
   }, []);
 
@@ -104,16 +112,29 @@ function BoardInner() {
     }
   };
 
+  const filteredCards = useMemo(() => {
+    if (!cards) return null;
+    return cards.filter((c) => {
+      if (assigneeFilter === "unassigned" && c.assignee) return false;
+      if (assigneeFilter && assigneeFilter !== "unassigned" && c.assignee?.id !== assigneeFilter) return false;
+      if (priorityFilter && c.priority.id !== priorityFilter) return false;
+      return true;
+    });
+  }, [cards, assigneeFilter, priorityFilter]);
+
   const byStatus = useMemo(() => {
     const map = new Map<string, Card[]>();
     statuses?.forEach((s) => map.set(s.id, []));
-    cards?.forEach((c) => map.get(c.status.id)?.push(c));
+    filteredCards?.forEach((c) => map.get(c.status.id)?.push(c));
     return map;
-  }, [statuses, cards]);
+  }, [statuses, filteredCards]);
 
   useEffect(() => {
     localStorage.setItem("board-view", viewMode);
   }, [viewMode]);
+
+  const hasFilters = assigneeFilter || priorityFilter;
+  const clearFilters = () => { setAssigneeFilter(""); setPriorityFilter(""); };
 
   return (
     <div className="space-y-4">
@@ -127,19 +148,32 @@ function BoardInner() {
             <button onClick={() => setViewMode("board")} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors", viewMode === "board" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Board</button>
             <button onClick={() => setViewMode("list")} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors", viewMode === "list" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>List</button>
           </div>
-          <Select value={projectId} onChange={(e) => { setProjectId(e.target.value); router.replace("/board?projectId=" + e.target.value); }} className="w-56" aria-label="Select project">
+          <Select value={projectId} onChange={(e) => { setProjectId(e.target.value); router.replace("/board?projectId=" + e.target.value); }} className="w-48" aria-label="Select project">
             {projects.length === 0 && <option value="">No projects</option>}
             {projects.map((p) => <option key={p.id} value={p.id}>{p.key} - {p.name}</option>)}
           </Select>
         </div>
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="w-48" aria-label="Filter by assignee">
+          <option value="">All assignees</option>
+          <option value="unassigned">Unassigned</option>
+          {users.map((u) => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
+        </Select>
+        <Select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="w-44" aria-label="Filter by priority">
+          <option value="">All priorities</option>
+          {priorities.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>
+        {hasFilters && <button onClick={clearFilters} className="text-xs font-medium text-primary hover:underline">Clear filters</button>}
+        {filteredCards && <span className="text-xs text-muted-foreground">{filteredCards.length} of {cards?.length ?? 0} tickets</span>}
+      </div>
 
-      {!statuses || !cards ? (
+      {!statuses || !filteredCards ? (
         <div className="flex gap-4 overflow-hidden">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[60vh] w-72 shrink-0" />)}</div>
       ) : viewMode === "list" ? (
-        <BoardListView cards={cards} statuses={statuses} onStatusChange={async (key, statusId) => {
-          const prev = cards;
-          setCards(cards.map((c) => (c.key === key ? { ...c, status: statuses.find((s) => s.id === statusId)! } : c)));
+        <BoardListView cards={filteredCards} statuses={statuses} onStatusChange={async (key, statusId) => {
+          const prev = cards!;
+          setCards(cards!.map((c) => (c.key === key ? { ...c, status: statuses.find((s) => s.id === statusId)! } : c)));
           try { await api("/api/tickets/" + key, { method: "PATCH", json: { statusId } }); window.dispatchEvent(new CustomEvent("strike:tickets-updated")); } catch (e) { setCards(prev); toast({ title: e instanceof ApiError ? e.message : "Could not update status", variant: "error" }); }
         }} />
       ) : (
