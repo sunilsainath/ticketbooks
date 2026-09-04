@@ -10,7 +10,7 @@ import {
 import { api, ApiError } from "@/lib/client";
 import { Select, Skeleton } from "@/components/ui/field";
 import { Avatar } from "@/components/ui/avatar";
-import { PriorityBadge, DueBadge, LabelChip, SlaBadge } from "@/components/tickets/badges";
+import { StatusBadge, PriorityBadge, TypeIcon, DueBadge, LabelChip, SlaBadge } from "@/components/tickets/badges";
 import { useToast } from "@/components/providers";
 import { cn, dueLabel } from "@/lib/utils";
 
@@ -42,6 +42,10 @@ function BoardInner() {
   const [statuses, setStatuses] = useState<Status[] | null>(null);
   const [cards, setCards] = useState<Card[] | null>(null);
   const [dragging, setDragging] = useState<Card | null>(null);
+  const [viewMode, setViewMode] = useState<"board" | "list">(() => {
+    if (typeof window !== "undefined") return (localStorage.getItem("board-view") as "board" | "list") || "board";
+    return "board";
+  });
 
   useEffect(() => {
     api<{ statuses: Status[]; projects: { id: string; key: string; name: string }[] }>("/api/meta").then((m) => {
@@ -107,27 +111,37 @@ function BoardInner() {
     return map;
   }, [statuses, cards]);
 
+  useEffect(() => {
+    localStorage.setItem("board-view", viewMode);
+  }, [viewMode]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-bold tracking-tight">Kanban Board</h1>
-        <span className="hidden text-xs text-muted-foreground sm:inline">Drag cards between columns to update status</span>
-        <Select
-          value={projectId}
-          onChange={(e) => {
-            setProjectId(e.target.value);
-            router.replace("/board?projectId=" + e.target.value);
-          }}
-          className="ml-auto w-56"
-          aria-label="Select project"
-        >
-          {projects.length === 0 && <option value="">No projects</option>}
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.key} - {p.name}</option>)}
-        </Select>
+        <span className="hidden text-xs text-muted-foreground sm:inline">
+          {viewMode === "board" ? "Drag cards between columns to update status" : "List ordered by workflow — same tickets, flat view"}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex rounded-lg border bg-card p-1">
+            <button onClick={() => setViewMode("board")} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors", viewMode === "board" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Board</button>
+            <button onClick={() => setViewMode("list")} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors", viewMode === "list" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>List</button>
+          </div>
+          <Select value={projectId} onChange={(e) => { setProjectId(e.target.value); router.replace("/board?projectId=" + e.target.value); }} className="w-56" aria-label="Select project">
+            {projects.length === 0 && <option value="">No projects</option>}
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.key} - {p.name}</option>)}
+          </Select>
+        </div>
       </div>
 
       {!statuses || !cards ? (
         <div className="flex gap-4 overflow-hidden">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[60vh] w-72 shrink-0" />)}</div>
+      ) : viewMode === "list" ? (
+        <BoardListView cards={cards} statuses={statuses} onStatusChange={async (key, statusId) => {
+          const prev = cards;
+          setCards(cards.map((c) => (c.key === key ? { ...c, status: statuses.find((s) => s.id === statusId)! } : c)));
+          try { await api("/api/tickets/" + key, { method: "PATCH", json: { statusId } }); window.dispatchEvent(new CustomEvent("strike:tickets-updated")); } catch (e) { setCards(prev); toast({ title: e instanceof ApiError ? e.message : "Could not update status", variant: "error" }); }
+        }} />
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={(e) => void onDragEnd(e)}>
           <div className="flex gap-4 overflow-x-auto pb-3">
@@ -163,6 +177,45 @@ function Column({ status, cards }: { status: Status; cards: Card[] }) {
         {cards.length === 0 && <p className="py-8 text-center text-[11px] text-muted-foreground">Drop tickets here</p>}
       </div>
     </section>
+  );
+}
+
+function BoardListView({ cards, statuses, onStatusChange }: { cards: Card[]; statuses: Status[]; onStatusChange: (key: string, statusId: string) => Promise<void> }) {
+  const order = new Map(statuses.map((s) => [s.id, s.order]));
+  const sorted = [...cards].sort((a, b) => (order.get(a.status.id) ?? 99) - (order.get(b.status.id) ?? 99));
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead>
+            <tr className="border-b bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <th className="px-3 py-2.5 font-medium">Key</th>
+              <th className="py-2.5 pr-3 font-medium">Summary</th>
+              <th className="py-2.5 pr-3 font-medium">Status</th>
+              <th className="py-2.5 pr-3 font-medium">Priority</th>
+              <th className="py-2.5 pr-3 font-medium">Assignee</th>
+              <th className="py-2.5 pr-3 font-medium">Due</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {sorted.map((c) => (
+              <tr key={c.key} className="hover:bg-muted/50">
+                <td className="px-3 py-2.5"><Link href={"/tickets/" + c.key} className="font-mono text-xs font-semibold text-primary hover:underline">{c.key}</Link></td>
+                <td className="max-w-[420px] truncate py-2.5 pr-3"><Link href={"/tickets/" + c.key} className="font-medium hover:text-primary hover:underline">{c.title}</Link></td>
+                <td className="py-2.5 pr-3">
+                  <select value={c.status.id} onChange={(e) => void onStatusChange(c.key, e.target.value)} className="rounded-md border border-input bg-card px-2 py-1 text-xs">
+                    {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </td>
+                <td className="py-2.5 pr-3"><PriorityBadge name={c.priority.name} color={c.priority.color} /></td>
+                <td className="py-2.5 pr-3"><span className="flex items-center gap-1.5"><Avatar user={c.assignee} size="xs" /><span className="text-xs">{c.assignee ? `${c.assignee.firstName} ${c.assignee.lastName}` : "Unassigned"}</span></span></td>
+                <td className="py-2.5 pr-3"><span className="flex items-center gap-1.5"><SlaBadge sla={c.sla} size="sm" /><DueBadge {...dueLabel(c.dueDate)} /></span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

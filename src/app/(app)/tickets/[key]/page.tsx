@@ -146,15 +146,21 @@ export default function TicketPage() {
 
   const uploadFile = async (fileList: FileList | null) => {
     if (!fileList?.length) return;
-    const fd = new FormData();
-    fd.append("file", fileList[0]);
-    try {
-      const res = await fetch(`/api/tickets/${t.key}/attachments`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
-      toast({ title: "Attachment added", variant: "success" });
+    let ok = 0;
+    for (const file of Array.from(fileList)) {
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const res = await fetch(`/api/tickets/${t.key}/attachments`, { method: "POST", body: fd });
+        if (!res.ok) throw new Error((await res.json()).error ?? `Failed: ${file.name}`);
+        ok++;
+      } catch (e) {
+        toast({ title: e instanceof Error ? e.message : `Failed: ${file.name}`, variant: "error" });
+      }
+    }
+    if (ok) {
+      toast({ title: ok === 1 ? "Attachment added" : `${ok} attachments added`, variant: "success" });
       await load();
-    } catch (e) {
-      toast({ title: e instanceof Error ? e.message : "Upload failed", variant: "error" });
     }
   };
 
@@ -451,25 +457,64 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 
 function Attachments({ attachments, onUpload }: { attachments: AttachmentRow[]; onUpload: (f: FileList | null) => void }) {
   const fmtSize = (n: number) => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+  const isImage = (m: string) => m.startsWith("image/");
+  const [dragOver, setDragOver] = useState(false);
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const files = e.clipboardData?.files;
+    if (files && files.length) {
+      const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      if (imageFiles.length) {
+        e.preventDefault();
+        const dt = new DataTransfer();
+        imageFiles.forEach((f) => dt.items.add(f));
+        onUpload(dt.files);
+      }
+    }
+  };
+
   return (
-    <section className="rounded-xl border bg-card p-4 shadow-sm">
+    <section
+      className={cn("rounded-xl border bg-card p-4 shadow-sm transition-colors", dragOver && "border-primary bg-accent/30")}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); onUpload(e.dataTransfer.files); }}
+      onPaste={handlePaste}
+      tabIndex={0}
+    >
       <div className="mb-2.5 flex items-center justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attachments ({attachments.length})</h2>
-        <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline">
-          <Paperclip className="h-3.5 w-3.5" /> Attach file
-          <input type="file" hidden onChange={(e) => { onUpload(e.target.files); e.currentTarget.value = ""; }} />
+        <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2.5 py-1 text-xs font-medium hover:bg-muted">
+          <Paperclip className="h-3.5 w-3.5" /> Attach files
+          <input
+            type="file"
+            hidden
+            multiple
+            accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+            onChange={(e) => { onUpload(e.target.files); e.currentTarget.value = ""; }}
+          />
         </label>
       </div>
+      <p className="mb-3 text-[11px] text-muted-foreground">Drag & drop screenshots or documents, paste with Ctrl+V, or click to browse. Images, PDFs, Office docs, CSV, ZIP up to 20 MB each.</p>
       {attachments.length === 0 ? (
-        <p className="py-3 text-center text-xs text-muted-foreground">No files attached.</p>
+        <p className="rounded-lg border border-dashed py-6 text-center text-xs text-muted-foreground">No files attached — drop screenshots or documents here.</p>
       ) : (
-        <ul className="divide-y">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {attachments.map((a) => (
-            <li key={a.id} className="flex items-center gap-2.5 py-2 text-xs">
-              <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
-              <a href={`/api/attachments/${a.id}`} className="font-medium hover:text-primary hover:underline">{a.fileName}</a>
-              <span className="text-muted-foreground">{fmtSize(a.size)}</span>
-              <span className="ml-auto text-muted-foreground">{a.uploader.firstName} · {fmtDate(a.createdAt)}</span>
+            <li key={a.id} className="flex gap-3 rounded-lg border bg-card p-2.5">
+              {isImage(a.mimeType) ? (
+                <a href={`/api/attachments/${a.id}`} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                  <img src={`/api/attachments/${a.id}`} alt={a.fileName} className="h-16 w-16 rounded-md object-cover border" loading="lazy" />
+                </a>
+              ) : (
+                <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border bg-muted text-muted-foreground">
+                  <Paperclip className="h-6 w-6" />
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <a href={`/api/attachments/${a.id}`} className="block truncate text-xs font-medium hover:text-primary hover:underline" title={a.fileName}>{a.fileName}</a>
+                <span className="text-[11px] text-muted-foreground">{a.mimeType.split("/")[1]?.toUpperCase() || "FILE"} · {fmtSize(a.size)}</span>
+                <span className="block text-[11px] text-muted-foreground">{a.uploader.firstName} · {fmtDate(a.createdAt)}</span>
+              </span>
             </li>
           ))}
         </ul>
